@@ -1,0 +1,125 @@
+---
+title: "Actuary Data"
+author: "Michele Tian"
+date: "1/31/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library('readxl')
+library(tidyr)
+library(ggplot2)
+library(tidyverse)
+library(leaps)
+library(forecast)
+library(stats)
+```
+```{r}
+plotForecastErrors <- function(forecasterrors)
+{
+  # make a histogram of the forecast errors:
+  mybinsize <- IQR(forecasterrors,na.rm=TRUE)/4
+  mysd   <- sd(forecasterrors,na.rm=TRUE)
+  mymin  <- min(forecasterrors,na.rm=TRUE) - mysd*5
+  mymax  <- max(forecasterrors,na.rm=TRUE) + mysd*3
+  # generate normally distributed data with mean 0 and standard deviation mysd
+  mynorm <- rnorm(10000, mean=0, sd=mysd)
+  mymin2 <- min(mynorm)
+  mymax2 <- max(mynorm)
+  if (mymin2 < mymin) { mymin <- mymin2 }
+  if (mymax2 > mymax) { mymax <- mymax2 }
+  # make a red histogram of the forecast errors, with the normally distributed data overlaid:
+  mybins <- seq(mymin, mymax, mybinsize)
+  hist(forecasterrors, col="red", freq=FALSE, breaks=mybins)
+  # freq=FALSE ensures the area under the histogram = 1
+  # generate normally distributed data with mean 0 and standard deviation mysd
+  myhist <- hist(mynorm, plot=FALSE, breaks=mybins)
+  # plot the normal curve as a blue line on top of the histogram of forecast errors:
+  points(myhist$mids, myhist$density, type="l", col="blue", lwd=2)
+}
+```
+
+
+```{r}
+data <- read_excel('Co2_emission.xlsx')
+
+
+ggplot(data = data, aes(x= Year, y = Total)) + geom_line() + labs(title = "Plot of Total Co2 Emission", x = "Year", y = "CO2 Emission")
+
+sectors_use = ggplot() + geom_line(data = data, aes(x= Year, y = Building.and.Land.Use), color = "red") + geom_line(data = data, aes(x= Year, y = Industrial.Processes.Product.Use), color = "green") + geom_line(data = data, aes(x= Year, y = Other), color = "orange") + geom_line(data = data, aes(x= Year, y = Transport), color = "yellow") + geom_line(data = data, aes(x= Year, y = Waste), color = "black") + xlab('Year') + ylab('Co2 Emission without Energy, Manufacturing, and Construction')
+sectors_use
+
+ggplot(data = data, aes(x= Year, y = Energy.Manufacturing.Construction)) + geom_line() + labs(title = "Plot of Co2 for Energy, Manufacturing, and Construction Sector", x = "Year", y = "Co2 Emission")
+
+ggplot(data = data, aes(x= GDP, y = Total)) + geom_line() + labs(title = "GDP vs Total Co2 Emission", x = "GDP", y = "CO2 Emission")
+
+```
+```{r}
+biocapacity.2018 <- data.frame(
+  group = c("Built-up Land", "Cropland", "Fishing Grounds", "Forest Products", "Grazing Land"),
+  value = c(2688875, 45444695, 3123090, 37249065, 5024467) 
+)
+head(biocapacity.2018)
+bp <- ggplot(biocapacity.2018, aes(x='', y = value, fill = group)) + geom_bar(width = 1, stat = "identity")
+
+pie <- bp + coord_polar('y', start = 0) + labs(fill = "Source Type")
+pie
+```
+
+```{r}
+ecological.footprint.2018 <- data.frame(
+  group = c("Built-up Land", "Carbon", "Cropland", "Fishing Grounds", "Forest Products", "Grazing Land"),
+  value = c(2748331, 129814538, 48986767, 2698159, 25529319, 6551660)
+)
+head(ecological.footprint.2018)
+bp <- ggplot(ecological.footprint.2018, aes(x='', y = value, fill = group)) + geom_bar(width = 1, stat = "identity")
+
+pie2 <- bp + coord_polar('y', start = 0) + labs(fill = "Source Type")
+pie2
+```
+moving average
+```{r}
+CO2emission <- ts(data2$Total,start=c(1995))
+plot.ts(CO2emission)
+
+```
+```{r}
+CO2emissionforecasts <- HoltWinters(CO2emission,gamma=FALSE)
+CO2emissionforecasts
+plot(CO2emissionforecasts)
+```
+```{r}
+CO2emissionforecasts$fitted
+CO2emissionforecasts$SSE
+```
+```{r}
+HoltWinters(CO2emission,gamma=F, l.start=785269891, b.start = -4111540)
+CO2emissionforecasts2 <-forecast:::forecast.HoltWinters(CO2emissionforecasts,h=11)
+CO2emissionforecasts2
+plot(CO2emissionforecasts2)
+points(2030,691830798)
+points((2020,903602336),(2021,899307201),(2022,895012066),(2023,890716931),(2024,886421796),(2025,882126661),(2026,877831526),(2027,873536391),(2028,869241257),(2029, 864946122),(2030,860650987))
+```
+```{r}
+acf(CO2emissionforecasts2$residuals,lag.max=20,na.action = na.pass)
+Box.test(CO2emissionforecasts2$residuals,lag=20,type="Ljung-Box")
+plot.ts(CO2emissionforecasts2$residuals)
+plotForecastErrors(CO2emissionforecasts2$residuals)
+```
+
+
+```{r}
+dataP<- data %>%
+  mutate(Penergy = Energy.Manufacturing.Construction/Total,Pbuilding=Building.and.Land.Use/Total, Pindustrial=Industrial.Processes.Product.Use/Total,Ptransport=Transport/Total,Pwaste=Waste/Total,Pother=Other/Total)%>%
+  select(Year,Penergy,Pbuilding,Ptransport,Pother,Pindustrial,Pwaste)
+dataPM<-dataP%>%
+  summarize(meanB=mean(Pbuilding),meanE=mean(Penergy),meanI=mean(Pindustrial),meanO=mean(Pother),meanW=mean(Pwaste))
+dataPM
+dataP
+
+ggplot() + geom_line(data = dataP, aes(x= Year, y = Penergy), color = "red")+geom_line(data = dataP, aes(x= Year, y = Pindustrial), color = "green") + geom_line(data = dataP, aes(x= Year, y = Pother), color = "orange") + geom_line(data = dataP, aes(x= Year, y = Ptransport), color = "yellow") + geom_line(data = dataP, aes(x= Year, y = Pwaste), color = "black")+geom_line(data=dataP,aes(x=Year,y=Pbuilding))+ xlab('Year') + ylab('Co2 Emission percentage')
+```
+
+
+  
